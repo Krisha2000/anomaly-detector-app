@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import altair as alt
+import plotly.graph_objects as go
 from utils import detect_anomalies, get_anomaly_periods, get_explanation
 
 # Check if PyTorch is available and set a flag
@@ -14,17 +15,80 @@ except ImportError:
 # --- Page Configuration ---
 st.set_page_config(
     page_title="Time-Series Anomaly Detector",
-    page_icon="🤖",
+    page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
+# --- Plotly Architecture Diagram Function ---
+def create_architecture_diagram():
+    fig = go.Figure()
+
+    # Define positions and dimensions
+    y_center = 0.5
+    box_height = 0.35
+    box_width = 0.6
+    
+    # Block definitions
+    blocks = {
+        "Input": {"x": 0, "y": y_center, "title": "Input Window", "subtitle": "Shape: [30, 1]"},
+        "Encoder_Top": {"x": 1.5, "y": y_center + 0.22, "title": "LSTM Layer", "subtitle": "128 Neurons"},
+        "Encoder_Bottom": {"x": 1.5, "y": y_center - 0.22, "title": "LSTM Layer", "subtitle": "64 Neurons"},
+        "Latent": {"x": 3, "y": y_center, "title": "Latent Vector", "subtitle": "Compressed"},
+        "Decoder_Top": {"x": 4.5, "y": y_center + 0.22, "title": "LSTM Layer", "subtitle": "64 Neurons"},
+        "Decoder_Bottom": {"x": 4.5, "y": y_center - 0.22, "title": "LSTM Layer", "subtitle": "128 Neurons"},
+        "Output": {"x": 6, "y": y_center, "title": "Output Window", "subtitle": "Reconstructed"},
+    }
+
+    # Draw blocks and text
+    for name, b in blocks.items():
+        fig.add_shape(type="rect", x0=b['x'] - box_width/2, y0=b['y'] - box_height/2, x1=b['x'] + box_width/2, y1=b['y'] + box_height/2,
+                      line=dict(color="#d1d5db"), fillcolor="#f9fafb")
+        fig.add_annotation(x=b['x'], y=b['y']+0.06, text=f"<b>{b['title']}</b>", showarrow=False, font=dict(color="#1f2937", size=12))
+        fig.add_annotation(x=b['x'], y=b['y']-0.06, text=b['subtitle'], showarrow=False, font=dict(color="#4b5563", size=10))
+
+    # Draw section boxes (Encoder/Decoder)
+    fig.add_shape(type="rect", x0=1.5 - 0.45, y0=y_center - 0.55, x1=1.5 + 0.45, y1=y_center + 0.55,
+                  line=dict(color="#3b82f6", width=2, dash="dash"))
+    fig.add_annotation(x=1.5, y=y_center + 0.65, text="<b>ENCODER</b>", showarrow=False, font=dict(color="#3b82f6", size=13))
+
+    fig.add_shape(type="rect", x0=4.5 - 0.45, y0=y_center - 0.55, x1=4.5 + 0.45, y1=y_center + 0.55,
+                  line=dict(color="#10b981", width=2, dash="dash"))
+    fig.add_annotation(x=4.5, y=y_center + 0.65, text="<b>DECODER</b>", showarrow=False, font=dict(color="#10b981", size=13))
+
+    # Draw arrows
+    def draw_arrow(x_start, x_end, y_pos):
+        fig.add_annotation(x=x_end, y=y_pos, ax=x_start, ay=y_pos, xref="x", yref="y", axref="x", ayref="y",
+                           showarrow=True, arrowhead=2, arrowsize=1.2, arrowwidth=1.5, arrowcolor="#6b7280")
+
+    draw_arrow(blocks['Input']['x'] + box_width/2, blocks['Encoder_Top']['x'] - 0.45, y_center)
+    draw_arrow(blocks['Encoder_Top']['x'] + 0.45, blocks['Latent']['x'] - box_width/2, y_center)
+    draw_arrow(blocks['Latent']['x'] + box_width/2, blocks['Decoder_Top']['x'] - 0.45, y_center)
+    draw_arrow(blocks['Decoder_Top']['x'] + 0.45, blocks['Output']['x'] - box_width/2, y_center)
+
+    # Vertical arrows
+    fig.add_annotation(x=1.5, y=blocks['Encoder_Bottom']['y'] + box_height/2, ax=1.5, ay=blocks['Encoder_Top']['y'] - box_height/2,
+                       showarrow=True, arrowhead=2, arrowsize=1.2, arrowwidth=1.5, arrowcolor="#6b7280")
+    fig.add_annotation(x=4.5, y=blocks['Decoder_Bottom']['y'] + box_height/2, ax=4.5, ay=blocks['Decoder_Top']['y'] - box_height/2,
+                       showarrow=True, arrowhead=2, arrowsize=1.2, arrowwidth=1.5, arrowcolor="#6b7280")
+
+    fig.update_layout(
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        xaxis=dict(range=[-0.5, 6.5], visible=False),
+        yaxis=dict(range=[-0.2, 1.2], visible=False),
+        height=350,
+        margin=dict(l=10, r=10, t=10, b=10),
+        showlegend=False
+    )
+    return fig
+
 # --- Streamlit UI ---
 
-st.title("🤖 Hybrid Time-Series Anomaly Detector")
-st.markdown("This tool uses a Hybrid LSTM Autoencoder combined with Benford's Law to detect anomalies. Upload your data to begin.")
+st.title("Hybrid Time-Series Anomaly Detector")
+st.markdown("This tool utilizes a Hybrid LSTM Autoencoder combined with Benford's Law to detect anomalies. Upload your data to begin.")
 
-# Initialize session state for chat
+# Initialize session state
 if 'explaining_anomaly' not in st.session_state:
     st.session_state.explaining_anomaly = None
 if 'explanation' not in st.session_state:
@@ -32,7 +96,7 @@ if 'explanation' not in st.session_state:
 
 # --- Sidebar for Configuration ---
 with st.sidebar:
-    st.header("⚙️ Configuration")
+    st.header("Configuration")
     
     if not PYTORCH_AVAILABLE:
         st.error("PyTorch not found! Please ensure it is listed in your requirements.txt for deployment.")
@@ -50,18 +114,17 @@ with st.sidebar:
         value_col = st.selectbox("Select Value Column (Target)", df.columns, index=1 if len(df.columns) > 1 else 0)
         
         st.subheader("Model Parameters")
-        st.info("The app uses the Hybrid LSTM model.")
+        st.info("The application uses the Hybrid LSTM model.")
         
         window_size = st.number_input("Window Size / Look-back Period", min_value=10, max_value=200, value=30, step=5)
         threshold = st.number_input("Anomaly Threshold (Std Dev)", min_value=1.0, max_value=5.0, value=2.5, step=0.1)
 
-        if st.button("🚀 Detect Anomalies", use_container_width=True):
+        if st.button("Detect Anomalies", use_container_width=True):
             st.session_state.date_col = date_col
             st.session_state.value_col = value_col
             st.session_state.window_size = window_size
             st.session_state.threshold = threshold
             st.session_state.run_analysis = True
-            # Reset chat state on new analysis
             st.session_state.explaining_anomaly = None
             st.session_state.explanation = None
 
@@ -95,9 +158,8 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
         else:
             st.session_state.display_results = False
 
-
 if st.session_state.get('display_results', False):
-    st.header("📊 Analysis Results")
+    st.header("Analysis Results")
     results_df = st.session_state.results_df
     anomaly_periods = st.session_state.anomaly_periods
     date_col = st.session_state.date_col
@@ -116,7 +178,7 @@ if st.session_state.get('display_results', False):
     
     st.altair_chart(base_chart + anomaly_regions, use_container_width=True)
 
-    st.header("📝 Detected Anomaly Periods")
+    st.header("Detected Anomaly Periods")
     if not anomaly_periods.empty:
         for index, row in anomaly_periods.iterrows():
             col1, col2, col3, col4 = st.columns([2, 2, 1, 1])
@@ -129,30 +191,29 @@ if st.session_state.get('display_results', False):
             with col4:
                 if st.button("Explain", key=f"explain_{index}"):
                     st.session_state.explaining_anomaly = row
-                    st.session_state.explanation = None # Reset previous explanation
+                    st.session_state.explanation = None
     else:
         st.info("No anomalies were detected with the current settings.")
 
-    # --- Chatbot Explanation Section ---
     if st.session_state.explaining_anomaly is not None:
-        st.header("💬 Anomaly Explanation Chat")
+        st.header("Anomaly Explanation")
         anomaly_to_explain = st.session_state.explaining_anomaly
         start = anomaly_to_explain['start_date'].strftime('%Y-%m-%d')
         end = anomaly_to_explain['end_date'].strftime('%Y-%m-%d')
         
-        st.info(f"Let's explain the anomaly from **{start}** to **{end}**.")
+        st.info(f"Explaining the anomaly from **{start}** to **{end}**.")
 
         if st.session_state.explanation:
             st.markdown("---")
             st.markdown("### AI-Generated Explanation")
             st.markdown(st.session_state.explanation)
         else:
-            context_prompt = f"To give you the best explanation, please provide some context about this data. For example: 'Apple Inc. stock price', 'Server CPU usage', or 'Daily user signups'."
+            context_prompt = f"To provide a relevant explanation, please specify the context of this data (e.g., 'Apple Inc. stock price', 'Server CPU usage')."
             context = st.text_input(context_prompt, key=f"context_{start}")
 
             if st.button("Get Explanation", key=f"get_exp_{start}"):
                 if context:
-                    with st.spinner("Asking AI for explanation..."):
+                    with st.spinner("Generating explanation..."):
                         explanation = get_explanation(anomaly_to_explain['start_date'], anomaly_to_explain['end_date'], context)
                         st.session_state.explanation = explanation
                         st.rerun() 
@@ -165,53 +226,40 @@ elif not st.session_state.get('df', pd.DataFrame()).empty:
 else:
     st.info("Upload a CSV file and configure the parameters in the sidebar to begin.")
 
-
-# --- Explainer Section ---
-with st.expander("💡 How the Hybrid LSTM Model Works"):
+with st.expander("How the Hybrid LSTM Model Works"):
     st.markdown("""
-    Our model combines two different ways of thinking to find anomalies. It looks at both the *shape* of the data and the statistical *properties* of the numbers themselves.
-    """)
-
-    st.subheader("Step 1: Input Data Window")
-    st.markdown("The model doesn't look at the whole dataset at once. Instead, it slides a 'window' across the data to analyze small, sequential chunks.")
-    
-    sample_data = pd.DataFrame({
-        'Day': pd.to_datetime(pd.date_range('2023-01-01', periods=30)),
-        'Value': [10, 12, 11, 13, 15, 14, 16, 18, 20, 19, 21, 23, 22, 25, 45, 48, 28, 26, 27, 29, 30, 32, 31, 33, 35, 34, 36, 38, 37, 40]
-    })
-    input_chart = alt.Chart(sample_data).mark_line(point=True).encode(
-        x=alt.X('Day:T', title='Time'),
-        y=alt.Y('Value:Q', title='Value'),
-        tooltip=['Day', 'Value']
-    ).properties(title='A Sample Time-Series Window')
-    st.altair_chart(input_chart, use_container_width=True)
-
-    st.subheader("Step 2: Parallel Analysis")
-    st.markdown("Each window of data is analyzed by two different methods at the same time:")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.info("🧠 **LSTM Autoencoder Analysis**")
-        st.markdown("""
-        - **What it does:** Learns the normal *shape* and *pattern* of the data.
-        - **How it finds anomalies:** It tries to reconstruct the input window. If the window has an unusual pattern, the model struggles to rebuild it accurately, resulting in a high **Reconstruction Error**.
-        """)
-
-    with col2:
-        st.info("📊 **Benford's Law Analysis**")
-        st.markdown("""
-        - **What it does:** Checks if the first digits of the numbers in the window follow a natural statistical distribution.
-        - **How it finds anomalies:** If the digits are not distributed naturally (e.g., too many 9s), it suggests the data might be manipulated or unnatural, resulting in a high **Benford's Deviation Score**.
-        """)
-
-    st.subheader("Step 3: Combine Scores for Final Decision")
-    st.markdown("""
-    The scores from both analyses are normalized and added together. An event is only flagged as a **high-confidence anomaly** if it's suspicious from *both* a pattern perspective and a statistical perspective.
-    
-    > **Anomaly Score** = (LSTM Reconstruction Error) + (Benford's Deviation Score)
-    
-    This hybrid approach reduces false positives and finds more meaningful anomalies.
+    This model combines two distinct analytical methods to identify anomalies. It evaluates both the temporal **shape** of the data and the statistical **properties** of the numbers themselves.
     """)
 
     st.subheader("Autoencoder Architecture")
-    st.image("https://i.imgur.com/2u9zP5G.png", caption="The LSTM Autoencoder compresses data to its essential features (encoding) and then tries to rebuild it (decoding).")
+    st.plotly_chart(create_architecture_diagram(), use_container_width=True)
+    
+    st.subheader("Step 1: Input Data Window")
+    st.markdown("The model analyzes the dataset by sliding a 'window' across the data, examining small, sequential chunks rather than the entire series at once.")
+    
+    st.subheader("Step 2: Parallel Analysis")
+    st.markdown("Each data window is processed by two methods simultaneously:")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.info("**LSTM Autoencoder Analysis**")
+        st.markdown("""
+        - **Objective:** To learn the normal temporal patterns and shape of the data.
+        - **Method:** The model attempts to reconstruct the input window. A high **Reconstruction Error** occurs if the pattern is unusual, signaling a potential anomaly.
+        """)
+
+    with col2:
+        st.info("**Benford's Law Analysis**")
+        st.markdown("""
+        - **Objective:** To verify if the numbers follow a natural statistical distribution.
+        - **Method:** The distribution of the first digits in the window is checked. A high **Benford's Deviation Score** suggests the data may be unnatural or manipulated.
+        """)
+
+    st.subheader("Step 3: Combined Scoring")
+    st.markdown("""
+    The scores from both analyses are normalized and aggregated. An event is flagged as a high-confidence anomaly only if it is suspicious from both a pattern and a statistical perspective.
+    
+    > **Final Anomaly Score** = (Normalized Reconstruction Error) + (Normalized Deviation Score)
+    
+    This hybrid methodology is designed to reduce false positives and identify more significant anomalies.
+    """)
