@@ -168,7 +168,7 @@ if st.session_state.get('display_results', False):
                     with st.spinner("Asking AI for explanation..."):
                         explanation = get_explanation(anomaly_to_explain['start_date'], anomaly_to_explain['end_date'], context)
                         st.session_state.explanation = explanation
-                        st.experimental_rerun() # Rerun to display the explanation
+                        st.rerun() # Rerun to display the explanation
                 else:
                     st.warning("Please provide context for a more accurate explanation.")
 
