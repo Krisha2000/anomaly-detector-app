@@ -1,10 +1,10 @@
+import streamlit as st
 import numpy as np
 import requests
 import json
 import torch
 import torch.nn as nn
 from sklearn.preprocessing import MinMaxScaler
-import streamlit as st
 from models import LSTMAutoencoder # Import the class from models.py
 
 # --- Helper Functions for Anomaly Detection ---
@@ -43,58 +43,52 @@ def create_sequences(values, window_size):
         output.append(values[i : (i + window_size)])
     return np.stack(output)
 
-def detect_anomalies(df, value_col, window_size, threshold_multiplier, model):
-    """Main function to detect anomalies based on the selected model."""
+def detect_anomalies(df, value_col, window_size, threshold_multiplier):
+    """Main function to detect anomalies using the hybrid LSTM model."""
     values = df[value_col].to_numpy()
     errors = np.zeros_like(values, dtype=float)
 
-    if model == 'hybrid_lstm':
-        # --- LSTM Part: Calculate Reconstruction Error ---
-        scaler = MinMaxScaler(feature_range=(0, 1))
-        scaled_values = scaler.fit_transform(values.reshape(-1, 1))
-        
-        X = create_sequences(scaled_values, window_size)
-        X_tensor = torch.from_numpy(X).float()
-        
-        # Build, train, and predict with the PyTorch model
-        lstm_model = LSTMAutoencoder(seq_len=window_size, n_features=1)
-        criterion = nn.L1Loss(reduction='sum') # MAE
-        optimizer = torch.optim.Adam(lstm_model.parameters(), lr=1e-3)
-        
-        # Training loop
-        for epoch in range(10):
-            lstm_model.train()
-            optimizer.zero_grad()
-            outputs = lstm_model(X_tensor)
-            loss = criterion(outputs, X_tensor)
-            loss.backward()
-            optimizer.step()
+    # --- LSTM Part: Calculate Reconstruction Error ---
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    scaled_values = scaler.fit_transform(values.reshape(-1, 1))
+    
+    X = create_sequences(scaled_values, window_size)
+    X_tensor = torch.from_numpy(X).float()
+    
+    # Build, train, and predict with the PyTorch model
+    lstm_model = LSTMAutoencoder(seq_len=window_size, n_features=1)
+    criterion = nn.L1Loss(reduction='sum') # MAE
+    optimizer = torch.optim.Adam(lstm_model.parameters(), lr=1e-3)
+    
+    # Training loop
+    for epoch in range(10):
+        lstm_model.train()
+        optimizer.zero_grad()
+        outputs = lstm_model(X_tensor)
+        loss = criterion(outputs, X_tensor)
+        loss.backward()
+        optimizer.step()
 
-        # Calculate reconstruction error
-        lstm_model.eval()
-        with torch.no_grad():
-            X_pred_tensor = lstm_model(X_tensor)
-        reconstruction_errors = np.mean(np.abs(X_pred_tensor.numpy() - X), axis=1).flatten()
+    # Calculate reconstruction error
+    lstm_model.eval()
+    with torch.no_grad():
+        X_pred_tensor = lstm_model(X_tensor)
+    reconstruction_errors = np.mean(np.abs(X_pred_tensor.numpy() - X), axis=1).flatten()
 
-        # --- Benford's Law Part: Calculate Deviation Score ---
-        benford_scores = []
-        for i in range(len(values) - window_size + 1):
-            window = values[i : i + window_size]
-            benford_scores.append(calculate_benford_deviation(window))
-        
-        # --- Combine Scores ---
-        norm_reconstruction = normalize_scores(reconstruction_errors)
-        norm_benford = normalize_scores(benford_scores)
-        
-        combined_scores = norm_reconstruction + norm_benford
-        
-        # Pad errors to match original data length
-        errors[window_size-1:] = combined_scores
-
-    elif model == 'arima':
-        # Simulate ARIMA with a simple moving average forecast
-        moving_avg = df[value_col].rolling(window=window_size).mean().bfill().to_numpy()
-        errors = np.abs(values - moving_avg)
+    # --- Benford's Law Part: Calculate Deviation Score ---
+    benford_scores = []
+    for i in range(len(values) - window_size + 1):
+        window = values[i : i + window_size]
+        benford_scores.append(calculate_benford_deviation(window))
+    
+    # --- Combine Scores ---
+    norm_reconstruction = normalize_scores(reconstruction_errors)
+    norm_benford = normalize_scores(benford_scores)
+    
+    combined_scores = norm_reconstruction + norm_benford
+    
+    # Pad errors to match original data length
+    errors[window_size-1:] = combined_scores
 
     # Identify anomalies based on the threshold
     threshold = np.mean(errors) + threshold_multiplier * np.std(errors)
@@ -120,7 +114,7 @@ def get_explanation(start_date, end_date, context):
     try:
         chat_history = [{"role": "user", "parts": [{"text": prompt}]}]
         payload = {"contents": chat_history}
-        # This line will now securely access your key
+        # Securely access the API key from Streamlit's secrets
         api_key = st.secrets["GEMINI_API_KEY"]
         api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
 
