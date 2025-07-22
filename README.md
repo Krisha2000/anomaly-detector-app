@@ -2,7 +2,11 @@
 
 This project is an interactive web application built with Streamlit that detects anomalies in time-series data. It features an innovative hybrid model combining a PyTorch-based LSTM Autoencoder with statistical analysis using Benford's Law. The application is further enhanced with an AI-powered chatbot that provides real-world context for detected anomalies.
 
-**[➡️ View the Live Application Here](https://hybrid-anomaly-detector-app-krisha-sompura.streamlit.app/)**
+Application like : **https://hybrid-anomaly-detector-app-krisha-sompura.streamlit.app/**
+
+
+
+https://github.com/user-attachments/assets/f367c26a-9be5-48cf-9703-a124c0b62178
 
 
 
