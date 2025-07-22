@@ -43,11 +43,10 @@ def create_sequences(values, window_size):
         output.append(values[i : (i + window_size)])
     return np.stack(output)
 
-def detect_anomalies(df, value_col, window_size, threshold_multiplier):
+def detect_anomalies(df, value_col, window_size, threshold_multiplier, epochs):
     """Main function to detect anomalies using the hybrid LSTM model."""
     values = df[value_col].to_numpy()
-    errors = np.zeros_like(values, dtype=float)
-
+    
     # --- LSTM Part: Calculate Reconstruction Error ---
     scaler = MinMaxScaler(feature_range=(0, 1))
     scaled_values = scaler.fit_transform(values.reshape(-1, 1))
@@ -55,13 +54,12 @@ def detect_anomalies(df, value_col, window_size, threshold_multiplier):
     X = create_sequences(scaled_values, window_size)
     X_tensor = torch.from_numpy(X).float()
     
-    # Build, train, and predict with the PyTorch model
     lstm_model = LSTMAutoencoder(seq_len=window_size, n_features=1)
-    criterion = nn.L1Loss(reduction='sum') # MAE
+    criterion = nn.L1Loss(reduction='sum')
     optimizer = torch.optim.Adam(lstm_model.parameters(), lr=1e-3)
     
-    # Training loop
-    for epoch in range(10):
+    # Use the user-defined number of epochs
+    for epoch in range(epochs):
         lstm_model.train()
         optimizer.zero_grad()
         outputs = lstm_model(X_tensor)
@@ -69,7 +67,6 @@ def detect_anomalies(df, value_col, window_size, threshold_multiplier):
         loss.backward()
         optimizer.step()
 
-    # Calculate reconstruction error
     lstm_model.eval()
     with torch.no_grad():
         X_pred_tensor = lstm_model(X_tensor)
@@ -81,30 +78,36 @@ def detect_anomalies(df, value_col, window_size, threshold_multiplier):
         window = values[i : i + window_size]
         benford_scores.append(calculate_benford_deviation(window))
     
-    # --- Combine Scores ---
+    # --- Combine Scores and add to DataFrame ---
     norm_reconstruction = normalize_scores(reconstruction_errors)
     norm_benford = normalize_scores(benford_scores)
     
     combined_scores = norm_reconstruction + norm_benford
     
-    # Pad errors to match original data length
-    errors[window_size-1:] = combined_scores
+    # Pad all scores to match original data length for DataFrame columns
+    df['reconstruction_score'] = np.pad(norm_reconstruction, (window_size - 1, 0), 'constant', constant_values=0)
+    df['benford_score'] = np.pad(norm_benford, (window_size - 1, 0), 'constant', constant_values=0)
+    df['anomaly_score'] = np.pad(combined_scores, (window_size - 1, 0), 'constant', constant_values=0)
 
     # Identify anomalies based on the threshold
-    threshold = np.mean(errors) + threshold_multiplier * np.std(errors)
-    df['anomaly_score'] = errors
+    threshold = np.mean(combined_scores) + threshold_multiplier * np.std(combined_scores)
     df['is_anomaly'] = df['anomaly_score'] > threshold
     
-    return df
+    return df, threshold
 
 def get_anomaly_periods(df, date_col):
-    """Groups consecutive anomalies into periods."""
+    """Groups consecutive anomalies into periods and calculates feature contribution."""
     df['anomaly_group'] = (df['is_anomaly'] != df['is_anomaly'].shift()).cumsum()
+    
+    # Aggregate to find periods and average component scores
     anomaly_periods = df[df['is_anomaly']].groupby('anomaly_group').agg(
         start_date=(date_col, 'min'),
         end_date=(date_col, 'max'),
-        severity=('anomaly_score', 'max')
+        severity=('anomaly_score', 'max'),
+        reconstruction_contribution=('reconstruction_score', 'mean'),
+        benford_contribution=('benford_score', 'mean')
     ).reset_index(drop=True)
+    
     return anomaly_periods
 
 def get_explanation(start_date, end_date, context):
@@ -114,7 +117,6 @@ def get_explanation(start_date, end_date, context):
     try:
         chat_history = [{"role": "user", "parts": [{"text": prompt}]}]
         payload = {"contents": chat_history}
-        # Securely access the API key from Streamlit's secrets
         api_key = st.secrets["GEMINI_API_KEY"]
         api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
 
@@ -126,7 +128,7 @@ def get_explanation(start_date, end_date, context):
         if result.get("candidates") and result["candidates"][0].get("content", {}).get("parts"):
             return result["candidates"][0]["content"]["parts"][0]["text"]
         else:
-            return "Could not retrieve a valid explanation from the AI model. The response structure was unexpected."
+            return "Could not retrieve a valid explanation from the AI model."
             
     except requests.exceptions.RequestException as e:
         return f"Could not retrieve explanation due to a network error: {e}"
