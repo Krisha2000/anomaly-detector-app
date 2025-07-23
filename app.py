@@ -140,7 +140,6 @@ if st.session_state.get('display_results', False):
     value_col = st.session_state.value_col
     threshold_value = st.session_state.threshold_value
 
-    # Chart 1: Main data with anomalies
     base_chart = alt.Chart(results_df).mark_line().encode(
         x=alt.X(f'{date_col}:T', title='Date'),
         y=alt.Y(f'{value_col}:Q', title='Value'),
@@ -149,7 +148,6 @@ if st.session_state.get('display_results', False):
     anomaly_regions = alt.Chart(anomaly_periods).mark_rect(opacity=0.3, color='red').encode(x=f'start_date:T', x2='end_date:T')
     st.altair_chart(base_chart + anomaly_regions, use_container_width=True)
 
-    # Chart 2: Anomaly Scores
     st.subheader("Anomaly Score Over Time")
     score_chart = alt.Chart(results_df).mark_area(
         line={'color':'#3b82f6'},
@@ -165,17 +163,16 @@ if st.session_state.get('display_results', False):
     ).interactive()
     
     threshold_line = alt.Chart(pd.DataFrame({'threshold': [threshold_value]})).mark_rule(color='red', strokeDash=[5,5]).encode(y='threshold:Q')
-    
     st.altair_chart(score_chart + threshold_line, use_container_width=True)
-
 
     st.header("Detected Anomaly Periods")
     if not anomaly_periods.empty:
         for index, row in anomaly_periods.iterrows():
-            recon_contrib = row['reconstruction_contribution']
-            benford_contrib = row['benford_contribution']
+            # --- This is the NEW, corrected code ---
+            recon_contrib = abs(row['reconstruction_contribution'])
+            benford_contrib = abs(row['benford_contribution'])
             total_contrib = recon_contrib + benford_contrib
-            
+
             if total_contrib > 0:
                 recon_percent = int((recon_contrib / total_contrib) * 100)
                 benford_percent = 100 - recon_percent
