@@ -205,7 +205,7 @@ if st.session_state.get('display_results', False):
             st.markdown("### AI-Generated Explanation")
             st.markdown(st.session_state.explanation)
         else:
-            context_prompt = f"To provide a relevant explanation, please specify the context of this data (e.g., 'Apple Inc. stock price', 'Server CPU usage')."
+            context_prompt = f"To provide a relevant explanation, please specify the context of this data (e.g., 'Apple Inc. stock price')."
             context = st.text_input(context_prompt, key=f"context_{start}")
 
             if st.button("Get Explanation", key=f"get_exp_{start}"):
