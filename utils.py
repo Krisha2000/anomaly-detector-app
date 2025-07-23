@@ -95,14 +95,14 @@ def detect_anomalies(df, value_col, window_size, threshold_multiplier, epochs):
     
     return df, threshold
 
-def get_anomaly_periods(df, date_col):
+def get_anomaly_periods(df, timestamp_col):
     """Groups consecutive anomalies into periods and calculates feature contribution."""
     df['anomaly_group'] = (df['is_anomaly'] != df['is_anomaly'].shift()).cumsum()
     
     # Aggregate to find periods and average component scores
     anomaly_periods = df[df['is_anomaly']].groupby('anomaly_group').agg(
-        start_date=(date_col, 'min'),
-        end_date=(date_col, 'max'),
+        start_timestamp=(timestamp_col, 'min'),
+        end_timestamp=(timestamp_col, 'max'),
         severity=('anomaly_score', 'max'),
         reconstruction_contribution=('reconstruction_score', 'mean'),
         benford_contribution=('benford_score', 'mean')
@@ -110,44 +110,9 @@ def get_anomaly_periods(df, date_col):
     
     return anomaly_periods
 
-def get_explanation(start_date, end_date, context, ticker_symbol, value_column_name):
+def get_explanation(start_timestamp, end_timestamp, context):
     """Calls the Gemini API to get an explanation for an anomaly."""
-    # This is the new, more detailed prompt
-    prompt = f"""
-You are an expert financial analyst AI. Your task is to provide a clear, concise, and data-driven explanation for a market anomaly detected by a quantitative model.
-
-**Context:**
-- **Stock Ticker:** {ticker_symbol}
-- **Anomaly Period:** {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}
-- **Anomalous Data Point:** {value_column_name}
-- **User Provided Context:** {context}
-
-**Your Instructions:**
-
-1.  **Primary Investigation:** Search for significant, market-moving news and events directly related to **{ticker_symbol}** within the specified anomaly period. This includes, but is not limited to:
-    * Earnings reports and forward guidance.
-    * Merger & Acquisition (M&A) announcements.
-    * Major product launches or failures.
-    * Regulatory news or legal proceedings.
-    * Changes in analyst ratings or price targets.
-    * Insider trading activity.
-
-2.  **Secondary Investigation:** If no strong company-specific news is found, investigate broader market and sector-wide events that could have impacted the stock. This includes:
-    * Major economic data releases (e.g., inflation, employment).
-    * Central bank policy changes (e.g., interest rate decisions).
-    * Significant geopolitical events.
-    * Major movements in the broader stock market indices (e.g., S&P 500, NASDAQ).
-
-3.  **Synthesize and Report:** Based on your investigation, provide a summary in the following format:
-
-    **Anomaly Explanation Report**
-
-    * **Most Likely Cause:** [Provide the single most probable cause for the anomaly.]
-    * **Supporting Events:**
-        * [Bulleted list of specific news or events you found, with dates if possible.]
-    * **Broader Context:** [Briefly comment on the general market or sector sentiment at the time, if relevant.]
-    * **Confidence Score:** [Provide a confidence score (Low, Medium, High) that your explanation is the correct one.]
-"""
+    prompt = f"""For a time-series stock price dataset representing "{context}", an anomaly was detected between {start_timestamp.strftime('%Y-%m-%d')} and {end_timestamp.strftime('%Y-%m-%d')}. Search for major news or events (such as financial reports, market changes, or world events) within this period that could explain this anomaly. Provide a brief, bulleted summary."""
     
     try:
         chat_history = [{"role": "user", "parts": [{"text": prompt}]}]
@@ -160,8 +125,8 @@ You are an expert financial analyst AI. Your task is to provide a clear, concise
         
         result = response.json()
         
-        if result.get("candidates") and result["candidates"][0].get("content", {}).get("parts"):
-            return result["candidates"][0]["content"]["parts"][0]["text"]
+        if result.get("canditimestamps") and result["canditimestamps"][0].get("content", {}).get("parts"):
+            return result["canditimestamps"][0]["content"]["parts"][0]["text"]
         else:
             return "Could not retrieve a valid explanation from the AI model."
             
