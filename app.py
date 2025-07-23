@@ -50,13 +50,14 @@ def create_architecture_diagram():
     draw_arrow(blocks['Decoder_Top']['x'] + 0.45, blocks['Output']['x'] - box_width/2, y_center)
     fig.add_annotation(x=1.5, y=blocks['Encoder_Bottom']['y'] + box_height/2, ax=1.5, ay=blocks['Encoder_Top']['y'] - box_height/2, showarrow=True, arrowhead=2, arrowsize=1.2, arrowwidth=1.5, arrowcolor="#6b7280")
     fig.add_annotation(x=4.5, y=blocks['Decoder_Bottom']['y'] + box_height/2, ax=4.5, ay=blocks['Decoder_Top']['y'] - box_height/2, showarrow=True, arrowhead=2, arrowsize=1.2, arrowwidth=1.5, arrowcolor="#6b7280")
-    fig.update_layout(paper_bgcolor="white", plot_bgcolor="white", xaxis=dict(range=[-0.5, 6.5], visible=False), yaxis=dict(range=[-0.2, 1.2], visible=False), height=350, margin=dict(l=10, r=10, t=10, b=10), showlegend=False)
+    fig.uptimestamp_layout(paper_bgcolor="white", plot_bgcolor="white", xaxis=dict(range=[-0.5, 6.5], visible=False), yaxis=dict(range=[-0.2, 1.2], visible=False), height=350, margin=dict(l=10, r=10, t=10, b=10), showlegend=False)
     return fig
 
 # --- Streamlit UI ---
 
 st.title("Hybrid Time-Series Anomaly Detector")
-st.markdown( """ This tool utilizes a Hybrid LSTM Autoencoder combined with Benford's Law to detect anomalies. Upload your data to begin. [View the source code on GitHub](https://github.com/Krisha2000/hybrid-timeseries-anomaly-detector-app.git) """ )
+st.markdown("This tool utilizes a Hybrid LSTM Autoencoder combined with Benford's Law to detect anomalies. Upload your data to begin.")
+
 # Initialize session state
 if 'explaining_anomaly' not in st.session_state:
     st.session_state.explaining_anomaly = None
@@ -79,7 +80,7 @@ with st.sidebar:
         st.success("File uploaded successfully!")
         
         st.subheader("Column Selection")
-        date_col = st.selectbox("Select Date/Time Column", df.columns, index=0)
+        timestamp_col = st.selectbox("Select timestamp/Time Column", df.columns, index=0)
         value_col = st.selectbox("Select Value Column (Target)", df.columns, index=1 if len(df.columns) > 1 else 0)
         
         st.subheader("Model Parameters")
@@ -90,7 +91,7 @@ with st.sidebar:
         threshold = st.number_input("Anomaly Threshold (Std Dev)", min_value=1.0, max_value=5.0, value=2.5, step=0.1, help="How many standard deviations above the average score to flag an anomaly. Higher is less sensitive.")
 
         if st.button("Detect Anomalies", use_container_width=True):
-            st.session_state.date_col = date_col
+            st.session_state.timestamp_col = timestamp_col
             st.session_state.value_col = value_col
             st.session_state.window_size = window_size
             st.session_state.threshold = threshold
@@ -103,15 +104,15 @@ with st.sidebar:
 if 'run_analysis' in st.session_state and st.session_state.run_analysis:
     with st.spinner("Analyzing data... The Hybrid LSTM model may take a moment to train."):
         df = st.session_state.df.copy()
-        date_col = st.session_state.date_col
+        timestamp_col = st.session_state.timestamp_col
         value_col = st.session_state.value_col
         
         try:
-            df[date_col] = pd.to_datetime(df[date_col])
+            df[timestamp_col] = pd.to_timestamptime(df[timestamp_col])
             df[value_col] = pd.to_numeric(df[value_col])
-            df = df.sort_values(by=date_col).reset_index(drop=True)
+            df = df.sort_values(by=timestamp_col).reset_index(drop=True)
         except Exception as e:
-            st.error(f"Error processing columns. Please ensure '{date_col}' is a valid date format and '{value_col}' is numeric. Details: {e}")
+            st.error(f"Error processing columns. Please ensure '{timestamp_col}' is a valid timestamp format and '{value_col}' is numeric. Details: {e}")
             st.stop()
             
         results_df, threshold_value = detect_anomalies(
@@ -123,7 +124,7 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
         )
         
         if results_df is not None:
-            anomaly_periods = get_anomaly_periods(results_df, date_col)
+            anomaly_periods = get_anomaly_periods(results_df, timestamp_col)
             st.session_state.results_df = results_df
             st.session_state.anomaly_periods = anomaly_periods
             st.session_state.threshold_value = threshold_value
@@ -135,18 +136,20 @@ if st.session_state.get('display_results', False):
     st.header("Analysis Results")
     results_df = st.session_state.results_df
     anomaly_periods = st.session_state.anomaly_periods
-    date_col = st.session_state.date_col
+    timestamp_col = st.session_state.timestamp_col
     value_col = st.session_state.value_col
     threshold_value = st.session_state.threshold_value
 
+    # Chart 1: Main data with anomalies
     base_chart = alt.Chart(results_df).mark_line().encode(
-        x=alt.X(f'{date_col}:T', title='Date'),
+        x=alt.X(f'{timestamp_col}:T', title='timestamp'),
         y=alt.Y(f'{value_col}:Q', title='Value'),
-        tooltip=[date_col, value_col]
+        tooltip=[timestamp_col, value_col]
     ).interactive()
-    anomaly_regions = alt.Chart(anomaly_periods).mark_rect(opacity=0.3, color='red').encode(x=f'start_date:T', x2='end_date:T')
+    anomaly_regions = alt.Chart(anomaly_periods).mark_rect(opacity=0.3, color='red').encode(x=f'start_timestamp:T', x2='end_timestamp:T')
     st.altair_chart(base_chart + anomaly_regions, use_container_width=True)
 
+    # Chart 2: Anomaly Scores
     st.subheader("Anomaly Score Over Time")
     score_chart = alt.Chart(results_df).mark_area(
         line={'color':'#3b82f6'},
@@ -156,21 +159,23 @@ if st.session_state.get('display_results', False):
             x1=1, x2=1, y1=1, y2=0
         )
     ).encode(
-        x=alt.X(f'{date_col}:T', title='Date'),
+        x=alt.X(f'{timestamp_col}:T', title='timestamp'),
         y=alt.Y('anomaly_score:Q', title='Anomaly Score'),
-        tooltip=[date_col, 'anomaly_score']
+        tooltip=[timestamp_col, 'anomaly_score']
     ).interactive()
     
     threshold_line = alt.Chart(pd.DataFrame({'threshold': [threshold_value]})).mark_rule(color='red', strokeDash=[5,5]).encode(y='threshold:Q')
+    
     st.altair_chart(score_chart + threshold_line, use_container_width=True)
+
 
     st.header("Detected Anomaly Periods")
     if not anomaly_periods.empty:
         for index, row in anomaly_periods.iterrows():
-            recon_contrib = abs(row['reconstruction_contribution'])
-            benford_contrib = abs(row['benford_contribution'])
+            recon_contrib = row['reconstruction_contribution']
+            benford_contrib = row['benford_contribution']
             total_contrib = recon_contrib + benford_contrib
-
+            
             if total_contrib > 0:
                 recon_percent = int((recon_contrib / total_contrib) * 100)
                 benford_percent = 100 - recon_percent
@@ -181,7 +186,7 @@ if st.session_state.get('display_results', False):
             st.markdown("---")
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.write(f"**Period:** {row['start_date'].strftime('%Y-%m-%d')} to {row['end_date'].strftime('%Y-%m-%d')}")
+                st.write(f"**Period:** {row['start_timestamp'].strftime('%Y-%m-%d')} to {row['end_timestamp'].strftime('%Y-%m-%d')}")
                 st.write(f"**Severity:** {row['severity']:.2f}")
                 st.write(f"**Primary Drivers:** {importance_text}")
             with col2:
@@ -194,8 +199,8 @@ if st.session_state.get('display_results', False):
     if st.session_state.explaining_anomaly is not None:
         st.header("Anomaly Explanation")
         anomaly_to_explain = st.session_state.explaining_anomaly
-        start = anomaly_to_explain['start_date'].strftime('%Y-%m-%d')
-        end = anomaly_to_explain['end_date'].strftime('%Y-%m-%d')
+        start = anomaly_to_explain['start_timestamp'].strftime('%Y-%m-%d')
+        end = anomaly_to_explain['end_timestamp'].strftime('%Y-%m-%d')
         
         st.info(f"Explaining the anomaly from **{start}** to **{end}**.")
 
@@ -203,25 +208,17 @@ if st.session_state.get('display_results', False):
             st.markdown("### AI-Generated Explanation")
             st.markdown(st.session_state.explanation)
         else:
-            # CORRECTED: Ask for the ticker symbol
-            ticker_symbol = st.text_input("To begin, please provide the stock ticker symbol (e.g., 'AXISBANK.NS', 'ACN').", key=f"ticker_{start}")
-            context = st.text_input("Optional: Provide any additional context.", key=f"context_{start}")
+            context_prompt = f"To provide a relevant explanation, please specify the context of this data (e.g., 'Apple Inc. stock price', 'Server CPU usage')."
+            context = st.text_input(context_prompt, key=f"context_{start}")
 
             if st.button("Get Explanation", key=f"get_exp_{start}"):
-                if ticker_symbol:
+                if context:
                     with st.spinner("Generating explanation..."):
-                        # CORRECTED: Pass all required arguments to the function
-                        explanation = get_explanation(
-                            start_date=anomaly_to_explain['start_date'], 
-                            end_date=anomaly_to_explain['end_date'], 
-                            context=context,
-                            ticker_symbol=ticker_symbol,
-                            value_column_name=st.session_state.value_col
-                        )
+                        explanation = get_explanation(anomaly_to_explain['start_timestamp'], anomaly_to_explain['end_timestamp'], context)
                         st.session_state.explanation = explanation
                         st.rerun() 
                 else:
-                    st.warning("Please provide a stock ticker symbol to get an explanation.")
+                    st.warning("Please provide context for a more accurate explanation.")
 
     st.session_state.run_analysis = False 
 elif not st.session_state.get('df', pd.DataFrame()).empty:
