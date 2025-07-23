@@ -110,9 +110,44 @@ def get_anomaly_periods(df, date_col):
     
     return anomaly_periods
 
-def get_explanation(start_date, end_date, context):
+def get_explanation(start_date, end_date, context, ticker_symbol, value_column_name):
     """Calls the Gemini API to get an explanation for an anomaly."""
-    prompt = f"""For a time-series dataset representing "{context}", an anomaly was detected between {start_date.strftime('%Y-%m-%d')} and {end_date.strftime('%Y-%m-%d')}. Search for major news or events (such as financial reports, market changes, or world events) within this period that could explain this anomaly. Provide a brief, bulleted summary."""
+    # This is the new, more detailed prompt
+    prompt = f"""
+You are an expert financial analyst AI. Your task is to provide a clear, concise, and data-driven explanation for a market anomaly detected by a quantitative model.
+
+**Context:**
+- **Stock Ticker:** {ticker_symbol}
+- **Anomaly Period:** {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}
+- **Anomalous Data Point:** {value_column_name}
+- **User Provided Context:** {context}
+
+**Your Instructions:**
+
+1.  **Primary Investigation:** Search for significant, market-moving news and events directly related to **{ticker_symbol}** within the specified anomaly period. This includes, but is not limited to:
+    * Earnings reports and forward guidance.
+    * Merger & Acquisition (M&A) announcements.
+    * Major product launches or failures.
+    * Regulatory news or legal proceedings.
+    * Changes in analyst ratings or price targets.
+    * Insider trading activity.
+
+2.  **Secondary Investigation:** If no strong company-specific news is found, investigate broader market and sector-wide events that could have impacted the stock. This includes:
+    * Major economic data releases (e.g., inflation, employment).
+    * Central bank policy changes (e.g., interest rate decisions).
+    * Significant geopolitical events.
+    * Major movements in the broader stock market indices (e.g., S&P 500, NASDAQ).
+
+3.  **Synthesize and Report:** Based on your investigation, provide a summary in the following format:
+
+    **Anomaly Explanation Report**
+
+    * **Most Likely Cause:** [Provide the single most probable cause for the anomaly.]
+    * **Supporting Events:**
+        * [Bulleted list of specific news or events you found, with dates if possible.]
+    * **Broader Context:** [Briefly comment on the general market or sector sentiment at the time, if relevant.]
+    * **Confidence Score:** [Provide a confidence score (Low, Medium, High) that your explanation is the correct one.]
+"""
     
     try:
         chat_history = [{"role": "user", "parts": [{"text": prompt}]}]
