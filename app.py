@@ -56,16 +56,7 @@ def create_architecture_diagram():
 # --- Streamlit UI ---
 
 st.title("Hybrid Time-Series Anomaly Detector")
-st.markdown(
-    """
-    This tool utilizes a Hybrid LSTM Autoencoder combined with Benford's Law to detect anomalies.  
-    Upload your data to begin.  
-    
-    [View the source code on GitHub](https://github.com/Krisha2000/hybrid-timeseries-anomaly-detector-app.git)
-    """
-)
-
-
+st.markdown( """ This tool utilizes a Hybrid LSTM Autoencoder combined with Benford's Law to detect anomalies. Upload your data to begin. [View the source code on GitHub](https://github.com/Krisha2000/hybrid-timeseries-anomaly-detector-app.git) """ )
 # Initialize session state
 if 'explaining_anomaly' not in st.session_state:
     st.session_state.explaining_anomaly = None
@@ -176,7 +167,6 @@ if st.session_state.get('display_results', False):
     st.header("Detected Anomaly Periods")
     if not anomaly_periods.empty:
         for index, row in anomaly_periods.iterrows():
-            # --- This is the NEW, corrected code ---
             recon_contrib = abs(row['reconstruction_contribution'])
             benford_contrib = abs(row['benford_contribution'])
             total_contrib = recon_contrib + benford_contrib
@@ -213,17 +203,25 @@ if st.session_state.get('display_results', False):
             st.markdown("### AI-Generated Explanation")
             st.markdown(st.session_state.explanation)
         else:
-            context_prompt = f"To provide a relevant explanation, please specify the context of this data (e.g., 'Apple Inc. stock price')."
-            context = st.text_input(context_prompt, key=f"context_{start}")
+            # CORRECTED: Ask for the ticker symbol
+            ticker_symbol = st.text_input("To begin, please provide the stock ticker symbol (e.g., 'AXISBANK.NS', 'ACN').", key=f"ticker_{start}")
+            context = st.text_input("Optional: Provide any additional context.", key=f"context_{start}")
 
             if st.button("Get Explanation", key=f"get_exp_{start}"):
-                if context:
+                if ticker_symbol:
                     with st.spinner("Generating explanation..."):
-                        explanation = get_explanation(anomaly_to_explain['start_date'], anomaly_to_explain['end_date'], context)
+                        # CORRECTED: Pass all required arguments to the function
+                        explanation = get_explanation(
+                            start_date=anomaly_to_explain['start_date'], 
+                            end_date=anomaly_to_explain['end_date'], 
+                            context=context,
+                            ticker_symbol=ticker_symbol,
+                            value_column_name=st.session_state.value_col
+                        )
                         st.session_state.explanation = explanation
                         st.rerun() 
                 else:
-                    st.warning("Please provide context for a more accurate explanation.")
+                    st.warning("Please provide a stock ticker symbol to get an explanation.")
 
     st.session_state.run_analysis = False 
 elif not st.session_state.get('df', pd.DataFrame()).empty:
@@ -257,5 +255,5 @@ with st.expander("How the Hybrid LSTM Model Works"):
     st.markdown("""
     The scores from both analyses are normalized and aggregated. An event is flagged as a high-confidence anomaly only if it is suspicious from both a pattern and a statistical perspective.
     > **Final Anomaly Score** = (Normalized Reconstruction Error) + (Normalized Deviation Score)
-    > This hybrid methodology is designed to reduce false positives and identify more significant anomalies.
+    This hybrid methodology is designed to reduce false positives and identify more significant anomalies.
     """)
