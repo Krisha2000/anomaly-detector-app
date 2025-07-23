@@ -56,7 +56,15 @@ def create_architecture_diagram():
 # --- Streamlit UI ---
 
 st.title("Hybrid Time-Series Anomaly Detector")
-st.markdown("This tool utilizes a Hybrid LSTM Autoencoder combined with Benford's Law to detect anomalies. Upload your data to begin.")
+st.markdown(
+    """
+    This tool utilizes a Hybrid LSTM Autoencoder combined with Benford's Law to detect anomalies.  
+    Upload your data to begin.  
+    
+    [View the source code on GitHub](https://github.com/Krisha2000/hybrid-timeseries-anomaly-detector-app.git)
+    """
+)
+
 
 # Initialize session state
 if 'explaining_anomaly' not in st.session_state:
@@ -249,5 +257,5 @@ with st.expander("How the Hybrid LSTM Model Works"):
     st.markdown("""
     The scores from both analyses are normalized and aggregated. An event is flagged as a high-confidence anomaly only if it is suspicious from both a pattern and a statistical perspective.
     > **Final Anomaly Score** = (Normalized Reconstruction Error) + (Normalized Deviation Score)
-    This hybrid methodology is designed to reduce false positives and identify more significant anomalies.
+    > This hybrid methodology is designed to reduce false positives and identify more significant anomalies.
     """)
