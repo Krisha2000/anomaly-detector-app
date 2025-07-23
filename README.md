@@ -6,7 +6,10 @@ Application like : **https://hybrid-anomaly-detector-app-krisha-sompura.streamli
 
 
 
-https://github.com/user-attachments/assets/f367c26a-9be5-48cf-9703-a124c0b62178
+
+
+
+https://github.com/user-attachments/assets/fc49be5a-b0b6-4477-9f1b-ae680361a164
 
 
 
